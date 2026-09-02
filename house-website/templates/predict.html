@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>房价预测 - 成都二手房数据科学平台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif; background: #f5f5f5; }
+        
+        .navbar { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 0 20px; }
+        .navbar-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 60px; }
+        .logo { font-size: 20px; font-weight: bold; }
+        .logo a { color: white; text-decoration: none; }
+        .nav-links { display: flex; gap: 30px; }
+        .nav-links a { color: white; text-decoration: none; opacity: 0.9; }
+        .nav-links a:hover { opacity: 1; }
+        
+        .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+        h1 { text-align: center; color: #111; margin-bottom: 10px; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 30px; }
+        
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } }
+        
+        .form-group { background: white; padding: 20px; border-radius: 12px; }
+        .form-group label { display: block; font-weight: 600; color: #374151; margin-bottom: 8px; font-size: 14px; }
+        .form-group input[type="range"] { width: 100%; }
+        .form-group select, .form-group input[type="number"] { 
+            width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; 
+        }
+        
+        .range-value { color: #059669; font-weight: bold; font-size: 16px; }
+        
+        .btn-predict { 
+            display: block; width: 100%; max-width: 400px; margin: 30px auto; padding: 15px; 
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; 
+            border: none; border-radius: 12px; font-size: 18px; font-weight: 600; cursor: pointer; 
+        }
+        .btn-predict:hover { opacity: 0.9; }
+        .btn-predict:disabled { opacity: 0.6; cursor: not-allowed; }
+        
+        .result { 
+            display: none; background: linear-gradient(135deg, #10b981 0%, #059669 100%); 
+            color: white; padding: 30px; border-radius: 16px; text-align: center; margin-top: 20px; 
+        }
+        .result.show { display: block; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .result .price { font-size: 48px; font-weight: bold; }
+        .result .unit-price { font-size: 18px; opacity: 0.9; margin-top: 10px; }
+        .result .model-tag { display: inline-block; margin-top: 15px; padding: 5px 15px; background: rgba(255,255,255,0.2); border-radius: 20px; font-size: 14px; }
+        
+        .loading { display: none; text-align: center; padding: 20px; color: #059669; }
+        .loading.show { display: block; }
+        
+        .checkbox-group { display: flex; align-items: center; gap: 10px; }
+        .checkbox-group input { width: 20px; height: 20px; accent-color: #059669; }
+        
+        .info-box { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-inner">
+            <div class="logo"><a href="/">成都二手房数据科学平台</a></div>
+            <div class="nav-links">
+                <a href="/">首页</a>
+                <a href="/predict">房价预测</a>
+                <a href="/search">房源搜索</a>
+                <a href="/analytics">数据分析</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1>智能房价预测</h1>
+        <p class="subtitle">输入房屋特征，基于{% if has_model %}XGBoost机器学习模型{% else %}多因子规则模型{% endif %}预测二手房参考价格</p>
+        
+        <div class="info-box">
+            模型基于 10,000+ 条真实房源数据训练，R²=0.9123。支持面积、城区、户型、朝向、楼层、房龄、地铁距离等多维度特征。
+        </div>
+
+        <div class="form-grid">
+            <div class="form-group">
+                <label>建筑面积: <span class="range-value" id="area-val">100</span> m²</label>
+                <input type="range" id="area" min="30" max="300" value="100" oninput="document.getElementById('area-val').textContent=this.value">
+            </div>
+            
+            <div class="form-group">
+                <label>所属城区</label>
+                <select id="district">
+                    {% for d in districts %}
+                    <option value="{{ d }}">{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>室: <span class="range-value" id="rooms-val">3</span></label>
+                <input type="range" id="rooms" min="1" max="6" value="3" oninput="document.getElementById('rooms-val').textContent=this.value">
+            </div>
+            
+            <div class="form-group">
+                <label>厅: <span class="range-value" id="halls-val">1</span></label>
+                <input type="range" id="halls" min="0" max="4" value="1" oninput="document.getElementById('halls-val').textContent=this.value">
+            </div>
+            
+            <div class="form-group">
+                <label>卫: <span class="range-value" id="toilets-val">1</span></label>
+                <input type="range" id="toilets" min="0" max="4" value="1" oninput="document.getElementById('toilets-val').textContent=this.value">
+            </div>
+            
+            <div class="form-group">
+                <label>建造年份: <span class="range-value" id="year-val">2015</span></label>
+                <input type="range" id="build_year" min="1980" max="2026" value="2015" oninput="document.getElementById('year-val').textContent=this.value">
+            </div>
+            
+            <div class="form-group">
+                <label>朝向</label>
+                <select id="orientation">
+                    <option value="南">南</option>
+                    <option value="东南">东南</option>
+                    <option value="东">东</option>
+                    <option value="西南">西南</option>
+                    <option value="北">北</option>
+                    <option value="东北">东北</option>
+                    <option value="西">西</option>
+                    <option value="西北">西北</option>
+                    <option value="南北">南北</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>楼层位置</label>
+                <select id="floor">
+                    <option value="低楼层">低楼层</option>
+                    <option value="中楼层" selected>中楼层</option>
+                    <option value="高楼层">高楼层</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-group" style="margin-top: 20px;">
+            <div class="checkbox-group">
+                <input type="checkbox" id="has_subway" onchange="toggleSubway()">
+                <label for="has_subway" style="margin:0;">靠近地铁站</label>
+            </div>
+            <div id="subway-details" style="display:none; margin-top: 15px;">
+                <label>距地铁站: <span class="range-value" id="dist-val">1000</span> 米</label>
+                <input type="range" id="nearest_subway_dist" min="100" max="2000" step="100" value="1000" oninput="document.getElementById('dist-val').textContent=this.value">
+                <label style="margin-top: 10px;">周边地铁站数量: <span class="range-value" id="count-val">2</span> 个</label>
+                <input type="range" id="subway_count" min="0" max="10" value="2" oninput="document.getElementById('count-val').textContent=this.value">
+            </div>
+        </div>
+        
+        <div class="form-group" style="margin-top: 20px;">
+            <label>周边学校数量: <span class="range-value" id="school-val">3</span> 个</label>
+            <input type="range" id="school_count" min="0" max="20" value="3" oninput="document.getElementById('school-val').textContent=this.value">
+        </div>
+
+        <button class="btn-predict" onclick="predict()" id="predict-btn">开始预测</button>
+        
+        <div class="loading" id="loading">预测中...</div>
+        
+        <div class="result" id="result">
+            <div>预测总价</div>
+            <div class="price" id="price">--</div>
+            <div class="unit-price" id="unit-price"></div>
+            <div class="model-tag" id="model-tag"></div>
+        </div>
+    </div>
+
+    <script>
+        function toggleSubway() {
+            const checked = document.getElementById('has_subway').checked;
+            document.getElementById('subway-details').style.display = checked ? 'block' : 'none';
+        }
+        
+        async function predict() {
+            const btn = document.getElementById('predict-btn');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            result.classList.remove('show');
+            
+            const data = {
+                area: parseFloat(document.getElementById('area').value),
+                district: document.getElementById('district').value,
+                rooms: parseInt(document.getElementById('rooms').value),
+                halls: parseInt(document.getElementById('halls').value),
+                toilets: parseInt(document.getElementById('toilets').value),
+                build_year: parseInt(document.getElementById('build_year').value),
+                orientation: document.getElementById('orientation').value,
+                floor: document.getElementById('floor').value,
+                has_subway: document.getElementById('has_subway').checked,
+                nearest_subway_dist: document.getElementById('has_subway').checked ? 
+                    parseInt(document.getElementById('nearest_subway_dist').value) : 9999,
+                subway_count: document.getElementById('has_subway').checked ? 
+                    parseInt(document.getElementById('subway_count').value) : 0,
+                school_count: parseInt(document.getElementById('school_count').value),
+            };
+            
+            try {
+                const res = await fetch('/api/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const json = await res.json();
+                
+                if (json.status === 'ok') {
+                    document.getElementById('price').textContent = json.total_price.toFixed(2) + ' 万元';
+                    document.getElementById('unit-price').textContent = 
+                        '预测单价: ' + json.unit_price.toLocaleString() + ' 元/m²';
+                    document.getElementById('model-tag').textContent = 
+                        json.model === 'xgboost' ? 'XGBoost 模型' : '规则模型';
+                    result.classList.add('show');
+                } else {
+                    alert('预测失败: ' + (json.error || '未知错误'));
+                }
+            } catch (e) {
+                alert('请求失败: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                loading.classList.remove('show');
+            }
+        }
+    </script>
+</body>
+</html>
